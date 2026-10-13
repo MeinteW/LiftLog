@@ -1,0 +1,154 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Lift Log</title><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f6f3;--c:#fff;--t:#1c1c1a;--m:#77776f;--a:#2d6a4f;--b:#dcdcd4;--r:#b3261e}
+:root:not([data-theme=light]){}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#151514;--c:#212120;--t:#eee;--m:#9a9a92;--a:#6fcf97;--b:#383836;--r:#f2877f}}
+:root[data-theme=dark]{--bg:#151514;--c:#212120;--t:#eee;--m:#9a9a92;--a:#6fcf97;--b:#383836;--r:#f2877f}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:15px system-ui,-apple-system,Segoe UI,sans-serif;padding-bottom:90px}
+main{max-width:640px;margin:auto;padding:12px}
+nav{display:flex;gap:6px;margin-bottom:12px}nav button{flex:1}
+button,select,input{font:inherit;color:var(--t);background:var(--c);border:1px solid var(--b);border-radius:8px;padding:8px 10px;min-height:38px}
+button{cursor:pointer}button.p{background:var(--a);color:var(--bg);border-color:var(--a);font-weight:600}button.on{border-color:var(--a);color:var(--a);font-weight:600}
+button.d{color:var(--r)}button.s{padding:4px 8px;min-height:30px}
+.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:10px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.row>.g{flex:1;min-width:0}
+h2{margin:0 0 8px;font-size:18px}h3{margin:0;font-size:16px}.m{color:var(--m);font-size:13px}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--b)}.tag.Planned{color:#b26a00;border-color:#b26a00}.tag.Active{color:#1d5fa8;border-color:#1d5fa8}.tag.Done{color:var(--a);border-color:var(--a)}
+.set{display:grid;grid-template-columns:auto 1fr 1fr 1fr auto;gap:5px;align-items:center;margin:6px 0}
+.set input{width:100%;padding:6px;text-align:center}.set.dn input{opacity:.55}
+.ty{min-width:92px;font-size:12px;padding:4px 6px}.ctl{display:flex;gap:2px}
+.lab{display:grid;grid-template-columns:auto 1fr 1fr 1fr auto;gap:5px;font-size:11px;color:var(--m);text-align:center}
+#bar{position:fixed;left:0;right:0;bottom:0;background:var(--a);color:var(--bg);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));display:none;align-items:center;gap:8px;z-index:9}
+#bar b{font-size:24px;flex:1;font-variant-numeric:tabular-nums}#bar button{background:transparent;color:var(--bg);border-color:var(--bg)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+</style></head><body><main id="app"></main>
+<div id="bar"><span id="bl"></span><b id="bt"></b><span id="bb"></span></div>
+<script>
+const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,10),now=()=>Date.now();
+const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
+const TY={std:'Standard',myo:'Myo-reps',amrap:'AMRAP'},ST={w:'Warm-up',k:'Working',a:'Activation',m:'Myo'},ALLOW={std:['w','k'],amrap:['w','k'],myo:['w','a','m']};
+const STARTER=['Bench Press','Squat','Deadlift','Overhead Press','Barbell Row','Pull-up','Incline DB Press','Romanian Deadlift','Lat Pulldown','Leg Press','Biceps Curl','Triceps Pushdown'];
+const RESTS=[];for(let s=5;s<=60;s+=5)RESTS.push(s);for(let s=75;s<=300;s+=15)RESTS.push(s);
+const fmt=s=>{s=Math.max(0,Math.ceil(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+const rl=s=>s<60?s+'s':fmt(s);
+let S,tab='w',cur=null,form=null,armed=null,timer=null,msg='';
+function load(){try{S=JSON.parse(localStorage.getItem('lift')||'null')}catch(e){}
+ if(!S){S={lib:STARTER.map(n=>({id:uid(),name:n,type:'std',u:1})),w:[],del:{}}}}
+load();
+function persist(){try{localStorage.setItem('lift',JSON.stringify(S))}catch(e){}}
+function save(){persist();clearTimeout(save.t);if(gh().token)save.t=setTimeout(()=>syncNow(),2000)}
+const W=id=>S.w.find(w=>w.id==id);
+function touch(w){w.u=now();save()}
+const status=w=>w.fin?'Done':w.st?'Active':w.date>today()?'Planned':'Open';
+const elapsed=w=>{if(!w.st)return'';let t=Math.floor(((w.fin||now())-w.st)/1e3);const h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60,z=n=>String(n).padStart(2,'0');return (w.fin?'Took ':'Elapsed ')+(h?h+':'+z(m):m)+':'+z(x)};
+const _old=w=>{const n=w.ex.reduce((a,e)=>a+e.sets.length,0);if(w.date>today())return'Planned';return n&&w.ex.every(e=>e.sets.every(s=>s.done))?'Done':'Open'};
+const mkEx=(n,t)=>({id:uid(),name:n,type:t,rest:t=='myo'?15:90,cap:10,sets:[]});
+/* ---------- render ---------- */
+function render(){const a=$('#app');
+ a.innerHTML=`<nav>${[['w','Workouts'],['e','Exercises'],['y','Sync']].map(([k,l])=>`<button class="${tab==k&&!cur?'on':''}" data-a="tab" data-v="${k}">${l}</button>`).join('')}</nav>`+(cur&&W(cur)?viewW(W(cur)):tab=='w'?listW():tab=='e'?viewE():viewY());}
+const del=(key,act,id,label='Delete')=>`<button class="d s" data-a="${act}" data-id="${id}" data-k="${key}">${armed==key?'Tap again to confirm':label}</button>`;
+const typeSel=(v,a,id)=>`<select data-a="${a}" data-id="${id}">${Object.entries(TY).map(([k,l])=>`<option value="${k}"${v==k?' selected':''}>${l}</option>`).join('')}</select>`;
+function listW(){
+ let h=`<button class="p" style="width:100%;margin-bottom:10px" data-a="newform">+ New workout</button>`;
+ if(form){h+=`<div class="card"><h2>New workout</h2><div class="row"><input class="g" id="fn" placeholder="Workout name" value="${esc(form.name)}"><input type="date" id="fd" value="${form.date}"></div>
+ <div class="m" style="margin-top:8px">Pick exercises</div><div class="chips">${S.lib.map(x=>`<button class="s ${form.pick.includes(x.id)?'on':''}" data-a="pick" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div>
+ <div class="row"><input class="g" id="fx" placeholder="Custom exercise"><select id="ft">${Object.entries(TY).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select><button data-a="formadd">Add</button></div>
+ <div class="row" style="margin-top:10px"><button class="p" data-a="create">Create</button><button data-a="cancel">Cancel</button></div></div>`}
+ const ws=[...S.w].sort((a,b)=>b.date.localeCompare(a.date));
+ if(!ws.length)h+='<p class="m">No workouts yet. Create one above.</p>';
+ return h+ws.map(w=>{const st=status(w);return`<div class="card" data-a="open" data-id="${w.id}" style="cursor:pointer"><div class="row"><h3 class="g">${esc(w.name)}</h3><span class="tag ${st}">${st}</span></div><div class="m">${w.date} · ${w.ex.length} exercises · ${w.ex.reduce((a,e)=>a+e.sets.length,0)} sets</div></div>`}).join('')}
+function viewW(w){
+ let h=`<button class="s" data-a="back">← Back</button><div class="card" style="margin-top:8px"><div class="row"><input class="g" data-a="wname" value="${esc(w.name)}"><input type="date" data-a="wdate" value="${w.date}"></div><div class="row" style="margin-top:8px"><span class="tag ${status(w)}">${status(w)}</span><span class="m" id="el">${elapsed(w)}</span><span class="g"></span>${w.fin?`<button class="s" data-a="reopen">Reopen</button>`:w.st?`<button class="p s" data-a="finish">Finish workout</button>`:`<button class="p s" data-a="start">Start workout</button>`}${del('w'+w.id,'delw',w.id,'Delete workout')}</div></div>`;
+ w.ex.forEach((e,i)=>{h+=`<div class="card"><div class="row"><h3 class="g">${esc(e.name)}</h3><button class="s" data-a="exup" data-id="${e.id}">▲</button><button class="s" data-a="exdn" data-id="${e.id}">▼</button>${del('x'+e.id,'delex',e.id,'Remove')}</div>
+ <div class="row" style="margin:8px 0">${typeSel(e.type,'extype',e.id)}<label class="m">Rest <select data-a="exrest" data-id="${e.id}">${RESTS.map(s=>`<option value="${s}"${e.rest==s?' selected':''}>${rl(s)}</option>`).join('')}</select></label></div>`;
+ if(e.type=='amrap'){const run=timer&&timer.kind=='amrap'&&timer.ex==e.id;h+=`<div class="row" style="margin-bottom:6px"><label class="m">Time cap <select data-a="excap" data-id="${e.id}">${Array.from({length:60},(_,k)=>`<option value="${k+1}"${e.cap==k+1?' selected':''}>${k+1} min</option>`).join('')}</select></label>${run?`<button class="d" data-a="stopt">Stop</button>`:`<button class="p" data-a="startamrap" data-id="${e.id}">Start</button>`}</div>`}
+ h+=`<div class="lab"><span style="width:92px"></span><span>kg</span><span>reps</span><span>RPE</span><span style="width:98px"></span></div>`;
+ e.sets.forEach(s=>{h+=`<div class="set ${s.done?'dn':''}"><button class="ty" data-a="sty" data-id="${e.id}" data-s="${s.id}">${ST[s.type]}</button>
+ <input type="number" inputmode="decimal" step="any" data-a="sf" data-f="w" data-id="${e.id}" data-s="${s.id}" value="${s.w}"><input type="number" inputmode="numeric" data-a="sf" data-f="r" data-id="${e.id}" data-s="${s.id}" value="${s.r}"><input type="number" inputmode="decimal" step="0.5" min="1" max="10" data-a="sf" data-f="rpe" data-id="${e.id}" data-s="${s.id}" value="${s.rpe}">
+ <div class="ctl"><button class="s ${s.done?'on':''}" data-a="sdone" data-id="${e.id}" data-s="${s.id}">✓</button><button class="s" data-a="sup" data-id="${e.id}" data-s="${s.id}">▲</button><button class="s" data-a="sdn" data-id="${e.id}" data-s="${s.id}">▼</button><button class="s d" data-a="sdel" data-id="${e.id}" data-s="${s.id}">✕</button></div></div>`});
+ h+=`<div class="row">${ALLOW[e.type].map(t=>`<button class="s" data-a="sadd" data-id="${e.id}" data-t="${t}">+ ${ST[t]}</button>`).join('')}</div></div>`});
+ h+=`<div class="card"><h3>Add exercise</h3><div class="row" style="margin-top:6px"><select class="g" id="wx"><option value="">Choose from library…</option>${S.lib.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select><button data-a="wadd">Add</button></div>
+ <div class="row" style="margin-top:6px"><input class="g" id="cx" placeholder="New custom exercise"><select id="ct">${Object.entries(TY).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select><button data-a="wcustom">Add</button></div></div>`;return h}
+function viewE(){return`<div class="card"><h2>Add custom exercise</h2><div class="row"><input class="g" id="ex" placeholder="Name"><select id="et">${Object.entries(TY).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select><button class="p" data-a="eadd">Add</button></div></div>`+S.lib.map(x=>`<div class="card"><div class="row"><h3 class="g">${esc(x.name)}</h3><span class="m">${TY[x.type]}</span>${del('l'+x.id,'edel',x.id)}</div></div>`).join('')}
+function viewY(){const g=gh();return`<div class="card"><h2>GitHub sync</h2><p class="m">Your data is stored as <b>lift-log.json</b> in a private GitHub repo and syncs automatically between devices (on open, after each change, and when you return to the app).</p>
+<div class="row"><input class="g" id="gr" placeholder="owner/repo (private data repo)" value="${esc(g.repo||'')}" autocapitalize="off"></div>
+<div class="row" style="margin-top:6px"><input class="g" id="gt" type="password" placeholder="Fine-grained access token" value="${esc(g.token||'')}" autocapitalize="off"></div>
+<div class="row" style="margin-top:8px"><button class="p" data-a="ghsave">Save &amp; sync</button><button data-a="syncnow">Sync now</button><button class="d" data-a="ghoff">Disconnect</button></div>
+<p><b>${esc(msg)}</b></p></div>
+<div class="card"><h3>Backup</h3><div class="row" style="margin-top:6px"><button data-a="export">Download lift-log.json</button><input type="file" accept=".json,application/json" id="imp" style="max-width:220px"></div></div>`}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* ---------- actions ---------- */
+const E=(w,id)=>w.ex.find(e=>e.id==id),mv=(arr,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]]};
+function setDefaults(e,t){const l=[...e.sets].reverse().find(s=>s.type==t);return{id:uid(),type:t,w:l?l.w:'',r:l?l.r:'',rpe:'',done:false}}
+function startRest(e){if(e.type=='amrap'&&0)return;timer={kind:'rest',end:now()+e.rest*1e3,ex:e.id};tick()}
+const A={
+ tab(d){tab=d.v;cur=null},open(d){cur=d.id},back(){cur=null},
+ newform(){form={name:'',date:today(),pick:[]}},cancel(){form=null},
+ pick(d){const p=form.pick,i=p.indexOf(d.id);i<0?p.push(d.id):p.splice(i,1);keepForm()},
+ formadd(){const n=$('#fx').value.trim();if(!n)return;const x={id:uid(),name:n,type:$('#ft').value,u:now()};S.lib.push(x);keepForm();form.pick.push(x.id);save()},
+ create(){keepForm();const w={id:uid(),name:form.name.trim()||'Workout',date:form.date||today(),ex:form.pick.map(id=>S.lib.find(x=>x.id==id)).filter(Boolean).map(x=>mkEx(x.name,x.type)),u:now()};S.w.push(w);form=null;cur=w.id;save()},
+ wname(d,el){const w=W(cur);w.name=el.value;touch(w);return 1},wdate(d,el){const w=W(cur);w.date=el.value||w.date;touch(w)},
+ start(){const w=W(cur);w.st=now();w.fin=0;if(w.date>today())w.date=today();touch(w)},
+ finish(){const w=W(cur);w.fin=now();touch(w);timer=null;tick();return 1},reopen(){const w=W(cur);w.fin=0;touch(w)},
+ delw(d){if(armed!='w'+d.id)return arm('w'+d.id);S.del[d.id]=now();S.w=S.w.filter(w=>w.id!=d.id);cur=null;armed=null;save()},
+ exup(d){const w=W(cur);mv(w.ex,w.ex.findIndex(e=>e.id==d.id),-1);touch(w)},exdn(d){const w=W(cur);mv(w.ex,w.ex.findIndex(e=>e.id==d.id),1);touch(w)},
+ delex(d){if(armed!='x'+d.id)return arm('x'+d.id);const w=W(cur);w.ex=w.ex.filter(e=>e.id!=d.id);armed=null;touch(w)},
+ extype(d,el){const w=W(cur),e=E(w,d.id);e.type=el.value;e.rest=e.type=='myo'?15:90;e.sets.forEach(s=>{if(!ALLOW[e.type].includes(s.type))s.type='k'==s.type||'w'==s.type?s.type:(e.type=='myo'?'m':'k');if(e.type=='myo'&&s.type=='k')s.type='m'});touch(w)},
+ exrest(d,el){const w=W(cur);E(w,d.id).rest=+el.value;touch(w);return 1},excap(d,el){const w=W(cur);E(w,d.id).cap=+el.value;touch(w);return 1},
+ wadd(){const id=$('#wx').value,x=S.lib.find(x=>x.id==id);if(!x)return;const w=W(cur);w.ex.push(mkEx(x.name,x.type));touch(w)},
+ wcustom(){const n=$('#cx').value.trim();if(!n)return;const t=$('#ct').value;S.lib.push({id:uid(),name:n,type:t,u:now()});const w=W(cur);w.ex.push(mkEx(n,t));touch(w)},
+ sadd(d){const w=W(cur),e=E(w,d.id);e.sets.push(setDefaults(e,d.t));touch(w)},
+ sty(d){const w=W(cur),e=E(w,d.id),s=e.sets.find(s=>s.id==d.s),L=ALLOW[e.type];s.type=L[(L.indexOf(s.type)+1)%L.length];touch(w)},
+ sf(d,el){const w=W(cur),s=E(w,d.id).sets.find(s=>s.id==d.s);s[d.f]=el.value;touch(w);return 1},
+ sdone(d){const w=W(cur),e=E(w,d.id),s=e.sets.find(s=>s.id==d.s);s.done=!s.done;touch(w);if(s.done)startRest(e)},
+ sup(d){const w=W(cur),e=E(w,d.id);mv(e.sets,e.sets.findIndex(s=>s.id==d.s),-1);touch(w)},sdn(d){const w=W(cur),e=E(w,d.id);mv(e.sets,e.sets.findIndex(s=>s.id==d.s),1);touch(w)},
+ sdel(d){const w=W(cur),e=E(w,d.id);e.sets=e.sets.filter(s=>s.id!=d.s);touch(w)},
+ eadd(){const n=$('#ex').value.trim();if(n){S.lib.push({id:uid(),name:n,type:$('#et').value,u:now()});save()}},
+ edel(d){if(armed!='l'+d.id)return arm('l'+d.id);S.del[d.id]=now();S.lib=S.lib.filter(x=>x.id!=d.id);armed=null;save()},
+ startamrap(d){const e=E(W(cur),d.id);timer={kind:'amrap',end:now()+e.cap*6e4,ex:d.id};tick()},
+ stopt(){timer=null;tick()},
+ export(){doExport()},
+ ghsave(){localStorage.setItem('liftgh',JSON.stringify({repo:$('#gr').value.trim().replace(/^https?:\/\/github.com\//,''),token:$('#gt').value.trim()}));msg='Syncing…';syncNow()},syncnow(){msg='Syncing…';syncNow()},ghoff(){localStorage.removeItem('liftgh');msg='Disconnected. Data stays on this device.'}
+};
+function arm(k){armed=k;clearTimeout(arm.t);arm.t=setTimeout(()=>{armed=null;render()},3000)}
+function keepForm(){if(!form)return;const n=$('#fn'),d=$('#fd');if(n)form.name=n.value;if(d)form.date=d.value}
+document.addEventListener('click',e=>{const el=e.target.closest('[data-a]');if(!el||/INPUT|SELECT/.test(el.tagName)&&el.tagName!='BUTTON')return;if(el.tagName=='SELECT'||el.tagName=='INPUT')return;
+ if(el.classList.contains('card')&&e.target.closest('button,input,select'))return;
+ const f=A[el.dataset.a];if(f&&!f(el.dataset,el))render()});
+document.addEventListener('change',e=>{const el=e.target;if(el.id=='imp'){doImport(el.files[0]);return}
+ if(!el.dataset||!A[el.dataset.a]||el.tagName=='BUTTON')return;const keep=A[el.dataset.a](el.dataset,el);if(!keep||el.tagName=='SELECT')render()});
+document.addEventListener('input',e=>{const el=e.target;if(el.dataset&&el.dataset.a=='wname')A.wname(el.dataset,el)});
+/* ---------- timer ---------- */
+function tick(){const bar=$('#bar');if(!timer){bar.style.display='none';clearInterval(tick.i);tick.i=0;render();return}
+ const left=(timer.end-now())/1e3;
+ if(left<=0){try{navigator.vibrate&&navigator.vibrate(timer.kind=='amrap'?[400,150,400,150,400]:[300,100,300])}catch(e){}timer=null;tick();return}
+ bar.style.display='flex';$('#bl').textContent=timer.kind=='amrap'?'AMRAP':'Rest';$('#bt').textContent=fmt(left);
+ $('#bb').innerHTML=timer.kind=='amrap'?`<button data-a="stopt">Stop</button>`:`<button data-a="tadd" data-v="-15">−15</button><button data-a="tadd" data-v="15">+15</button><button data-a="stopt">Skip</button>`;
+ if(!tick.i)tick.i=setInterval(tick,250)}
+A.tadd=d=>{if(timer)timer.end+=+d.v*1e3;tick();return 1};
+/* ---------- sync ---------- */
+function merge(o){if(!o||!Array.isArray(o.w)||!Array.isArray(o.lib))throw 0;
+ const del={...S.del};for(const k in o.del||{})del[k]=Math.max(del[k]||0,o.del[k]);
+ const mg=(a,b)=>{const m=new Map();[...a,...b].forEach(x=>{const y=m.get(x.id);if(!y||(x.u||0)>(y.u||0))m.set(x.id,x)});return[...m.values()].filter(x=>!(del[x.id]>=(x.u||0)))};
+ S={w:mg(S.w,o.w),lib:mg(S.lib,o.lib),del};persist()}
+async function doImport(f){if(!f)return;try{merge(JSON.parse(await f.text()));msg='Imported and merged ✓'}catch(e){msg='That file could not be read.'}render()}
+function doExport(){const u=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='lift-log.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5e3)}
+const gh=()=>{try{return JSON.parse(localStorage.getItem('liftgh')||'{}')}catch(e){return{}}};
+const b64=t=>btoa(unescape(encodeURIComponent(t))),unb64=t=>decodeURIComponent(escape(atob(t.replace(/\s/g,''))));
+let syncing=false;
+async function syncNow(){const g=gh();if(!g.repo||!g.token)return;if(syncing)return;syncing=true;
+ const url=`https://api.github.com/repos/${g.repo}/contents/lift-log.json`,H={Authorization:'Bearer '+g.token,Accept:'application/vnd.github+json'};
+ try{let ok=false;for(let n=0;n<3&&!ok;n++){let sha;
+  const r=await fetch(url+'?t='+now(),{headers:H,cache:'no-store'});
+  if(r.ok){const j=await r.json();sha=j.sha;merge(JSON.parse(unb64(j.content)))}else if(r.status==401||r.status==403)throw new Error('token rejected or missing Contents permission');else if(r.status!=404)throw new Error('GitHub error '+r.status);
+  const p=await fetch(url,{method:'PUT',headers:H,body:JSON.stringify({message:'sync',content:b64(JSON.stringify(S)),sha})});
+  if(p.ok){ok=true;msg='Synced '+new Date().toLocaleTimeString()}
+  else if(p.status==409||p.status==422)continue;
+  else throw new Error(p.status==404?'repo not found or token has no access to it':p.status==401||p.status==403?'token rejected or read-only':'GitHub error '+p.status)}
+  if(!ok)msg='Sync conflict, try again'}catch(e){msg='Sync failed: '+e.message}
+ syncing=false;const ae=document.activeElement;if(!(ae&&/INPUT|SELECT/.test(ae.tagName)))render()}
+setInterval(()=>{const e=$('#el'),w=cur&&W(cur);if(e&&w)e.textContent=elapsed(w)},1000);
+render();syncNow();document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow()});
+</script></body></html>
