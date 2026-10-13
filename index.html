@@ -34,8 +34,10 @@ const RESTS=[];for(let s=5;s<=60;s+=5)RESTS.push(s);for(let s=75;s<=300;s+=15)RE
 const fmt=s=>{s=Math.max(0,Math.ceil(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
 const rl=s=>s<60?s+'s':fmt(s);
 let S,tab='w',cur=null,form=null,armed=null,timer=null,msg='';
+function dedupe(){const k=x=>x.name.trim().toLowerCase(),m=new Map();[...S.lib].sort((a,b)=>a.id<b.id?-1:1).forEach(x=>{if(!m.has(k(x)))m.set(k(x),x)});S.lib=S.lib.filter(x=>m.get(k(x))===x)}
 function load(){try{S=JSON.parse(localStorage.getItem('lift')||'null')}catch(e){}
- if(!S){S={lib:STARTER.map(n=>({id:uid(),name:n,type:'std',u:1})),w:[],del:{}}}}
+ if(!S){S={lib:STARTER.map((n,i)=>({id:'s'+i,name:n,type:'std',u:1})),w:[],del:{}}}
+ dedupe();persist()}
 load();
 function persist(){try{localStorage.setItem('lift',JSON.stringify(S))}catch(e){}}
 function save(){persist();clearTimeout(save.t);if(gh().token)save.t=setTimeout(()=>syncNow(),2000)}
@@ -106,7 +108,7 @@ const A={
  sup(d){const w=W(cur),e=E(w,d.id);mv(e.sets,e.sets.findIndex(s=>s.id==d.s),-1);touch(w)},sdn(d){const w=W(cur),e=E(w,d.id);mv(e.sets,e.sets.findIndex(s=>s.id==d.s),1);touch(w)},
  sdel(d){const w=W(cur),e=E(w,d.id);e.sets=e.sets.filter(s=>s.id!=d.s);touch(w)},
  eadd(){const n=$('#ex').value.trim();if(n){S.lib.push({id:uid(),name:n,type:$('#et').value,u:now()});save()}},
- edel(d){if(armed!='l'+d.id)return arm('l'+d.id);S.del[d.id]=now();S.lib=S.lib.filter(x=>x.id!=d.id);armed=null;save()},
+ edel(d){if(armed!='l'+d.id)return arm('l'+d.id);const x=S.lib.find(x=>x.id==d.id),k=x.name.trim().toLowerCase();S.lib.filter(y=>y.name.trim().toLowerCase()==k).forEach(y=>S.del[y.id]=now());S.lib=S.lib.filter(y=>y.name.trim().toLowerCase()!=k);armed=null;save()},
  startamrap(d){const e=E(W(cur),d.id);timer={kind:'amrap',end:now()+e.cap*6e4,ex:d.id};tick()},
  stopt(){timer=null;tick()},
  export(){doExport()},
@@ -132,7 +134,7 @@ A.tadd=d=>{if(timer)timer.end+=+d.v*1e3;tick();return 1};
 function merge(o){if(!o||!Array.isArray(o.w)||!Array.isArray(o.lib))throw 0;
  const del={...S.del};for(const k in o.del||{})del[k]=Math.max(del[k]||0,o.del[k]);
  const mg=(a,b)=>{const m=new Map();[...a,...b].forEach(x=>{const y=m.get(x.id);if(!y||(x.u||0)>(y.u||0))m.set(x.id,x)});return[...m.values()].filter(x=>!(del[x.id]>=(x.u||0)))};
- S={w:mg(S.w,o.w),lib:mg(S.lib,o.lib),del};persist()}
+ S={w:mg(S.w,o.w),lib:mg(S.lib,o.lib),del};dedupe();persist()}
 async function doImport(f){if(!f)return;try{merge(JSON.parse(await f.text()));msg='Imported and merged ✓'}catch(e){msg='That file could not be read.'}render()}
 function doExport(){const u=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='lift-log.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5e3)}
 const gh=()=>{try{return JSON.parse(localStorage.getItem('liftgh')||'{}')}catch(e){return{}}};
