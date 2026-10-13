@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Lift Log</title><meta name="apple-mobile-web-app-capable" content="yes">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Lift Log</title><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#2d6a4f"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f6f3;--c:#fff;--t:#1c1c1a;--m:#77776f;--a:#2d6a4f;--b:#dcdcd4;--r:#b3261e}
@@ -79,7 +79,7 @@ function viewY(){const g=gh();return`<div class="card"><h2>GitHub sync</h2><p cl
 <div class="row" style="margin-top:6px"><input class="g" id="gt" type="password" placeholder="Fine-grained access token" value="${esc(g.token||'')}" autocapitalize="off"></div>
 <div class="row" style="margin-top:8px"><button class="p" data-a="ghsave">Save &amp; sync</button><button data-a="syncnow">Sync now</button><button class="d" data-a="ghoff">Disconnect</button></div>
 <p><b>${esc(msg)}</b></p></div>
-<div class="card"><h3>Backup</h3><div class="row" style="margin-top:6px"><button data-a="export">Download lift-log.json</button><input type="file" accept=".json,application/json" id="imp" style="max-width:220px"></div></div>`}
+${inst?`<div class="card"><h3>Install</h3><button class="p" data-a="install">Install app on this device</button></div>`:''}<div class="card"><h3>Backup</h3><div class="row" style="margin-top:6px"><button data-a="export">Download lift-log.json</button><input type="file" accept=".json,application/json" id="imp" style="max-width:220px"></div></div>`}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 /* ---------- actions ---------- */
 const E=(w,id)=>w.ex.find(e=>e.id==id),mv=(arr,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]]};
@@ -152,5 +152,8 @@ async function syncNow(){const g=gh();if(!g.repo||!g.token)return;if(syncing)ret
   if(!ok)msg='Sync conflict, try again'}catch(e){msg='Sync failed: '+e.message}
  syncing=false;const ae=document.activeElement;if(!(ae&&/INPUT|SELECT/.test(ae.tagName)))render()}
 setInterval(()=>{const e=$('#el'),w=cur&&W(cur);if(e&&w)e.textContent=elapsed(w)},1000);
+let inst=null;addEventListener('beforeinstallprompt',e=>{e.preventDefault();inst=e;if(tab=='y'&&!cur)render()});
+A.install=()=>{if(inst){inst.prompt();inst=null}};
+if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 render();syncNow();document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow()});
 </script></body></html>
